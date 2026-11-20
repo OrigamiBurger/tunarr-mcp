@@ -9,6 +9,7 @@ import { registerMediaSourcesTools } from "./tools/media-sources.js";
 import { registerProgramsTools } from "./tools/programs.js";
 import { registerSessionsTools } from "./tools/sessions.js";
 import { registerSettingsTools } from "./tools/settings.js";
+import { registerSemanticTools } from "./tools/semantic.js";
 import { registerSmartCollectionsTools } from "./tools/smart-collections.js";
 import { registerStreamingTools } from "./tools/streaming.js";
 import { registerSystemTools } from "./tools/system.js";
