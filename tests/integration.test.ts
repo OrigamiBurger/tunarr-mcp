@@ -10,6 +10,7 @@ import { registerProgramsTools } from "../src/tools/programs.js";
 import { registerSessionsTools } from "../src/tools/sessions.js";
 import { registerSettingsTools } from "../src/tools/settings.js";
 import { registerSmartCollectionsTools } from "../src/tools/smart-collections.js";
+import { registerSemanticTools } from "../src/tools/semantic.js";
 import { registerStreamingTools } from "../src/tools/streaming.js";
 import { registerSystemTools } from "../src/tools/system.js";
 import {
@@ -25,6 +26,7 @@ import {
 const EXPECTED_TOOLS = [
   "add_library_to_source",
   "add_program_to_channel",
+  "add_show_to_channel",
   "add_schedule_slot",
   "add_schedule_time_slot",
   "batch_lookup_program_groupings",
@@ -33,6 +35,7 @@ const EXPECTED_TOOLS = [
   "clear_channel_schedule",
   "clear_channels_m3u_cache",
   "create_channel",
+  "create_channel_from_show",
   "create_custom_show",
   "create_filler_list",
   "create_media_source",
@@ -63,6 +66,7 @@ const EXPECTED_TOOLS = [
   "get_credit",
   "get_credit_artwork",
   "get_custom_show",
+  "get_episode_list",
   "get_etv_channel_diagnostics",
   "get_etv_playout_item",
   "get_etv_transcode_compatibility",
@@ -150,6 +154,7 @@ function buildServer(): McpServer {
   registerGuideTools(server, client);
   registerStreamingTools(server, client);
   registerSystemTools(server, client);
+  registerSemanticTools(server, client);
   return server;
 }
 

@@ -593,6 +593,178 @@ export class TunarrClient {
     );
   }
 
+  // ─── Semantic (task-oriented) helpers ─────────────────────────────────────
+  // These orchestrate multiple raw endpoints behind a single, goal-oriented
+  // method so callers don't have to assemble Tunarr DTO contracts directly.
+
+  /**
+   * Resolve a show by any of its identifiers (Tunarr UUID, external id,
+   * Plex/TVDB/TMDB id, or free-text title) to a small resolved-program DTO
+   * suitable for use in a channel lineup or custom show. The returned id is a
+   * Tunarr-internal id that the lineup DTO accepts.
+   */
+  async resolveShow(
+    id: string,
+  ): Promise<{ id: string; title: string; type: string; externalId?: string }[]> {
+    const show = await this.getShowDetails(id);
+    if (!show || typeof show !== "object") {
+      return [];
+    }
+    const s = show as Record<string, unknown>;
+    const identifiers = Array.isArray(s.identifiers)
+      ? (s.identifiers as Array<{ type?: string; id?: string }>)
+      : [];
+    return [
+      {
+        id: (s.uuid as string) ?? id,
+        title: (s.title as string) ?? "Unknown",
+        type: (s.type as string) ?? "show",
+        externalId:
+          (identifiers.find((i) => i.type === "tmdb")?.id as string) ??
+          (s.externalId as string),
+      },
+    ];
+  }
+
+  /**
+   * Create a channel backed by a show and attach its first season's episodes
+   * as the channel's initial lineup. Returns the created channel, the resolved
+   * show, and the new channel id.
+   */
+  async createChannelFromShow(
+    channelId: string,
+    channelName: string,
+    showId: string,
+    opts: {
+      channelNumber?: number;
+      transcodeConfigId?: string;
+      lineUp?: "ordered" | "chronological" | "random" | "next";
+    } = {},
+  ): Promise<{
+    createdChannel: unknown;
+    resolvedShow: unknown;
+    channelId: string;
+  }> {
+    const resolvedShow = await this.resolveShow(showId);
+    if (resolvedShow.length === 0) {
+      throw new Error(
+        `Could not resolve show "${showId}" — verify the ID with get_show_details or lookup_program.`,
+      );
+    }
+
+    const channelIdResolved = channelId ?? crypto.randomUUID();
+    const transcodeConfigId =
+      opts.transcodeConfigId ?? (await this.pickDefaultTranscodeConfigId());
+
+    const createdChannel = await this.createChannel({
+      type: "new",
+      channel: {
+        id: channelIdResolved,
+        name: channelName,
+        number: opts.channelNumber ?? 0,
+        groupTitle: channelName,
+        startTime: 0,
+        duration: 12,
+        stealth: false,
+        disableFillerOverlay: false,
+        guideMinimumDuration: 15,
+        streamMode: "hls",
+        subtitlesEnabled: true,
+        useEtvNext: true,
+        offline: { mode: "pic" },
+        icon: { path: "", width: 0, duration: 0, position: "bottom-right" },
+      },
+      transcodeConfigId,
+    });
+
+    const lineUp = opts.lineUp ?? "ordered";
+    await this.addProgramToChannel(channelIdResolved, {
+      type: "manual",
+      lineup: [
+        {
+          type: "content",
+          id: resolvedShow[0].id,
+          duration: 12,
+          season: { order: lineUp, direction: "asc" },
+        },
+      ],
+      append: false,
+    });
+
+    return {
+      createdChannel,
+      resolvedShow,
+      channelId: channelIdResolved,
+    };
+  }
+
+  /**
+   * Attach a show to an existing channel without disturbing its current lineup.
+   * Uses append=true so the show's episodes are added at the end of the lineup.
+   */
+  async addShowToChannel(
+    channelId: string,
+    showId: string,
+    opts: { lineUp?: "ordered" | "chronological" | "random" | "next" } = {},
+  ): Promise<{ attached: unknown; resolvedShow: unknown }> {
+    const resolvedShow = await this.resolveShow(showId);
+    if (resolvedShow.length === 0) {
+      throw new Error(
+        `Could not resolve show "${showId}" — verify the ID with get_show_details or lookup_program.`,
+      );
+    }
+    const lineUp = opts.lineUp ?? "ordered";
+    const attached = await this.addProgramToChannel(channelId, {
+      type: "manual",
+      lineup: [
+        {
+          type: "content",
+          id: resolvedShow[0].id,
+          duration: 12,
+          season: { order: lineUp, direction: "asc" },
+        },
+      ],
+      append: true,
+    });
+    return { attached, resolvedShow };
+  }
+
+  /**
+   * List the episodes that belong to a show. When a season id is supplied the
+   * episodes for that season are returned; otherwise every season is resolved
+   * and its episodes are returned.
+   */
+  async getEpisodeList(
+    showId: string,
+    seasonId?: string,
+  ): Promise<unknown> {
+    await this.resolveShow(showId);
+    if (seasonId) {
+      return this.getSeasonDetails(seasonId);
+    }
+    const seasons = await this.listShowSeasons(showId);
+    if (Array.isArray(seasons) && seasons.length > 0) {
+      const perSeason: unknown[] = [];
+      for (const season of seasons) {
+        const seasonUuid =
+          (season as Record<string, unknown>).uuid as string | undefined;
+        if (seasonUuid) {
+          perSeason.push(await this.getSeasonDetails(seasonUuid));
+        }
+      }
+      return perSeason;
+    }
+    return seasons;
+  }
+
+  private async pickDefaultTranscodeConfigId(): Promise<string> {
+    const configs = await this.getTranscodeConfigs();
+    if (Array.isArray(configs) && configs.length > 0) {
+      return (configs[0] as { id?: string }).id ?? "";
+    }
+    return "";
+  }
+
   // ─── Programs & Credits ───────────────────────────────────────────────────
 
   async getShowDetails(id: string): Promise<unknown> {
