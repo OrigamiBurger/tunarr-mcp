@@ -1,0 +1,39 @@
+{
+  "name": "tunarr-mcp",
+  "version": "1.0.0",
+  "description": "MCP server exposing Tunarr (self-hosted IPTV) — Streamable HTTP + stdio",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "node scripts/openapi-to-zod.mjs && tsc",
+    "start": "node dist/http.js",
+    "start:stdio": "node dist/index.js",
+    "dev": "tsx src/http.ts",
+    "dev:stdio": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.22.0",
+      "onFail": "download"
+    }
+  },
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

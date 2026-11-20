@@ -1,0 +1,38 @@
+# tunarr-mcp — Streamable HTTP MCP server for Tunarr
+#
+# Required: set TUNARR_URL in your environment (or an .env file next to this
+# compose file). The ${TUNARR_URL:?...} substitution makes `docker compose up`
+# fail fast with a clear message when it is missing.
+
+services:
+  tunarr-mcp:
+    build: .
+    image: tunarr-mcp
+    restart: unless-stopped
+    ports:
+      # Host port is env-configurable; container always listens on 3001
+      # unless you also override PORT.
+      - "${TUNARR_MCP_PORT:-3001}:3001"
+    environment:
+      # REQUIRED: root URL of the Tunarr server, e.g. http://tunarr:8409
+      TUNARR_URL: ${TUNARR_URL:?Set TUNARR_URL to the root URL of your Tunarr server, e.g. TUNARR_URL=http://host.docker.internal:8409}
+      # Optional: sent as `Authorization: Bearer <key>` when non-empty.
+      TUNARR_API_KEY: ${TUNARR_API_KEY:-}
+      # Optional overrides (defaults: PORT=3001, HOST=0.0.0.0)
+      #PORT: 3001
+      #HOST: 0.0.0.0
+    # Tunarr running on the Docker HOST: TUNARR_URL should be
+    # http://host.docker.internal:8409 and this mapping is required.
+    # Tunarr running elsewhere: use its routable URL instead.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3

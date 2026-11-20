@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "tunarr": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "env": {
+        "TUNARR_URL": "http://nas.homeserver.edu:30333/"
+      }
+    }
+  }
+}

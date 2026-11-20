@@ -1,0 +1,30 @@
+{
+  "generated_from": "docs/generated/tunarr-latest-openapi.json",
+  "note": "Maps MCP tool names to their OpenAPI operations so the runtime fetcher is decoupled from paths. The OpenAPI->Zod codegen (scripts/openapi-to-zod.mjs) consumes this to build src/generated/tool-schemas.ts at build time.",
+  "tools": [
+    { "name": "create_channel",              "method": "POST", "path": "/api/channels" },
+    { "name": "update_channel",              "method": "PUT",  "path": "/api/channels/{id}" },
+    { "name": "add_program_to_channel",      "method": "POST", "path": "/api/channels/{id}/programming" },
+    { "name": "add_schedule_slot",           "method": "POST", "path": "/api/channels/{channelId}/schedule-slots" },
+    { "name": "add_schedule_time_slot",      "method": "POST", "path": "/api/channels/{channelId}/schedule-time-slots" },
+    { "name": "bulk_add_fillers",            "method": "POST", "path": "/api/channels/bulk/fillers" },
+    { "name": "create_custom_show",          "method": "POST", "path": "/api/custom-shows" },
+    { "name": "update_custom_show",          "method": "PUT",  "path": "/api/custom-shows/{id}" },
+    { "name": "create_filler_list",          "method": "POST", "path": "/api/filler-lists" },
+    { "name": "update_filler_list",          "method": "PUT",  "path": "/api/filler-lists/{id}" },
+    { "name": "create_media_source",         "method": "POST", "path": "/api/media-sources" },
+    { "name": "update_media_source",         "method": "PUT",  "path": "/api/media-sources/{id}" },
+    { "name": "add_library_to_source",       "method": "PUT",  "path": "/api/media-sources/{id}/libraries/{libraryId}" },
+    { "name": "search_programs",             "method": "POST", "path": "/api/programs/search",
+      "coercions": { "query": { "type": "stringToObject", "keys": ["query"] } } },
+    { "name": "batch_lookup_program_groupings", "method": "POST", "path": "/api/program_groupings/batch/lookup" },
+    { "name": "update_ffmpeg_settings",      "method": "PUT",  "path": "/api/ffmpeg-settings" },
+    { "name": "update_hdhr_settings",        "method": "PUT",  "path": "/api/hdhr-settings" },
+    { "name": "update_plex_settings",        "method": "PUT",  "path": "/api/plex-settings" },
+    { "name": "update_xmltv_settings",       "method": "PUT",  "path": "/api/xmltv-settings" },
+    { "name": "create_transcode_config",     "method": "POST", "path": "/api/transcode_configs" },
+    { "name": "update_transcode_config",     "method": "PUT",  "path": "/api/transcode_configs/{id}" },
+    { "name": "create_smart_collection",     "method": "POST", "path": "/api/smart_collections" },
+    { "name": "update_smart_collection",     "method": "PUT",  "path": "/api/smart_collections/{id}" }
+  ]
+}
