@@ -17,7 +17,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "list_channels",
     {
       description:
-        "List all TV channels configured in Tunarr, a self-hosted IPTV server that turns media libraries into linear TV channels. Channels are the primary entity in Tunarr, so start here whenever you need channel IDs or UUIDs for get_channel, update_channel, delete_channel, get_channel_schedule, guide, or session tools. This is a read-only lookup and returns the full array of channel objects as JSON.",
+        "List all TV channels configured in Tunarr. This is the first tool to call whenever you need channel IDs or UUIDs — every other channel tool requires an ID obtained from this list (or from get_channel). Call it before any read tool (get_channel, get_channel_schedule, get_channel_programming) and before any write tool (create_channel, update_channel, delete_channel, add_program_to_channel, add_schedule_slot, clear_channel_schedule, bulk_add_fillers). This is a read-only lookup and returns the full array of channel objects as JSON.",
       annotations: { readOnlyHint: true },
     },
     async () => {
@@ -32,7 +32,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel",
     {
       description:
-        "Get the complete configuration of a single channel by its ID or UUID, including its number, group title, and related settings. Use this when you need the full details of one channel rather than the summary list; obtain channel IDs via list_channels. This is a read-only lookup and returns the full channel object as JSON.",
+        "Get the complete configuration of a single channel by its ID or UUID, including its number, group title, and display settings. Call after list_channels to get a channel ID, then use this when you need the full details of one specific channel rather than the summary list. Use get_channel_programming or get_channel_schedule if you need lineup/schedule details instead. This is a read-only lookup and returns the full channel object as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID (get available IDs via list_channels)"),
@@ -50,7 +50,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "create_channel",
     {
       description:
-        "Create a new TV channel in Tunarr, the primary entity that plays a linear schedule of content. Provide name, type (e.g. 'smart' or 'time'), and optional configuration such as groupTitle or guideFlexTitle; the channel's lineup is later built from programs, custom shows, filler lists, or smart collections. This mutates Tunarr by creating a new channel and returns the newly created channel object as JSON.",
+        "Create a new TV channel in Tunarr. This is the first step when building a channel from scratch — after calling this, you must populate the channel with content using add_program_to_channel, add_schedule_slot, or add_schedule_time_slot. Provide name, type (e.g. 'smart' or 'time'), and optional configuration such as groupTitle or guideFlexTitle in the request body. After creating a channel, obtain its ID from the response to use with subsequent tools. Returns the newly created channel object as JSON.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         body: create_channelBodySchema
@@ -71,14 +71,14 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "update_channel",
     {
       description:
-        "Update an existing channel's configuration, such as its name, number, or display options, without recreating it. Get the channel ID via list_channels and only include the fields you want to change. This mutates the channel in place and returns the updated channel object as JSON. If the change affects the lineup, a guide refresh task may be needed afterwards (see list_tasks and run_task).",
+        "Update an existing channel's configuration (name, number, group title, guide flex title) without recreating it. Get the channel ID via list_channels first, then only include the fields you want to change — omitted fields are left as-is. This does not modify the channel's lineup; use add_program_to_channel or add_schedule_slot for content changes instead. After lineup changes, a guide refresh may be needed (see list_tasks and run_task). Returns the updated channel object as JSON.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID to update (get available IDs via list_channels)"),
         name: z.string().optional().describe("The new channel name"),
         number: z.number().optional().describe("The channel number"),
         groupTitle: z.string().optional().describe("The channel group title"),
-        guideFlexTitle: z.string().optional().describe("The guide flex title"),
+        guideFlexTitle: z.string().optional().describe("The channel flex title shown during gaps"),
         body: update_channelBodySchema
           .optional()
           .describe("Advanced: raw DTO for unexposed fields"),
@@ -106,7 +106,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "delete_channel",
     {
       description:
-        "Permanently delete a channel by its ID or UUID. This is a destructive, irreversible operation: the channel and its schedule are removed from Tunarr, so verify the correct ID with list_channels before calling. Returns a JSON confirmation with success and a message.",
+        "Permanently delete a channel by its ID or UUID. This is a destructive, irreversible operation: the channel and all its schedule slots, time slots, and programming are removed from Tunarr. Verify the correct ID with list_channels before calling. Returns a JSON confirmation with success and a message.",
       annotations: { destructiveHint: true, readOnlyHint: false },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID to delete (get available IDs via list_channels)"),
@@ -129,7 +129,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel_schedule",
     {
       description:
-        "Get the schedule configuration for a specific channel, including its time slots, flex settings, and other scheduling parameters that make up its lineup. Use this when inspecting or debugging how a channel is programmed; obtain channel IDs via list_channels. This is a read-only lookup and returns the schedule object as JSON.",
+        "Get the schedule configuration for a specific channel, including its time slots, flex settings, and scheduling parameters. Call after list_channels to get a channel ID. Use this when you need to inspect or debug how a channel's timing is configured (time slots and flex gaps). For the full picture including program sources, use get_channel_programming instead. This is a read-only lookup and returns the schedule object as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         channelId: z.string().describe("The channel ID to get the schedule for (get available IDs via list_channels)"),
@@ -147,7 +147,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel_programs",
     {
       description:
-        "Get all programs that make up a channel's lineup source contents, i.e. every program item the channel draws from when playing. Use this when you need to see what content a channel contains before modifying its programming or building schedules; obtain channel IDs via list_channels. This is a read-only lookup and returns the array of channel programs as JSON.",
+        "Get all programs that make up a channel's lineup source contents — i.e. every program item the channel draws from when playing. Call after list_channels to get a channel ID, then use this before modifying programming (add_program_to_channel) or building schedules to see what content is already present. For the full schedule configuration including slots and flex settings, use get_channel_programming instead. This is a read-only lookup and returns the array of channel programs as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID (get available IDs via list_channels)"),
@@ -165,7 +165,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel_lineup",
     {
       description:
-        "Get the compiled lineup of a channel: the ordered sequence of program slots the channel plays, after schedules, flex time, and fillers have been resolved. Use this to inspect the actual playback order rather than the raw programming source; obtain channel IDs via list_channels. This is a read-only lookup and returns the compiled lineup as JSON.",
+        "Get the compiled lineup of a channel — the actual ordered sequence of program slots the channel plays, after schedules, flex time, and fillers have been resolved. Call after list_channels to get a channel ID. Use this to inspect what the channel will actually play in practice rather than the raw programming source (use get_channel_programs for that). This is a read-only lookup and returns the compiled lineup as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID (get available IDs via list_channels)"),
@@ -183,7 +183,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel_now_playing",
     {
       description:
-        "Get what is playing on a channel right now, including the current program and its position in the lineup. Use this to check live channel state, for example to answer 'what's on channel 1 at this moment'; obtain channel IDs via list_channels. This is a read-only lookup and returns the now-playing status object as JSON.",
+        "Get what is playing on a channel right now, including the current program and its position in the lineup. Call after list_channels to get a channel ID. Use this to check live channel state (e.g. 'what's on channel 1 at this moment'). For historical or configuration details, use get_channel_lineup or get_channel_programming instead. This is a read-only lookup and returns the now-playing status object as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID (get available IDs via list_channels)"),
@@ -201,7 +201,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel_programming",
     {
       description:
-        "Get the full programming/schedule configuration of a channel, including its program sources, schedule slots, time slots, and ordering settings. Use this when you need the complete picture of how a channel is programmed before making changes with add_program_to_channel, add_schedule_slot, or clear_channel_schedule; obtain channel IDs via list_channels. This is a read-only lookup and returns the full programming configuration as JSON.",
+        "Get the full programming and schedule configuration of a channel, including program sources, schedule slots, time slots, filler lists, and ordering settings. Call after list_channels to get a channel ID. This is the tool to use before making changes with add_program_to_channel, add_schedule_slot, add_schedule_time_slot, or clear_channel_schedule — inspect the current state first to avoid overwriting existing configuration. For just program sources (without schedule details), use get_channel_programs; for just timing/slots, use get_channel_schedule. This is a read-only lookup and returns the full programming configuration as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID (get available IDs via list_channels)"),
@@ -219,7 +219,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel_fallbacks",
     {
       description:
-        "Get the fallback program list configured for a channel, which plays whenever the lineup has no scheduled content (for example during flex gaps). Use this to see what a channel will air when nothing else is scheduled; obtain channel IDs via list_channels. This is a read-only lookup and returns the fallback program list as JSON.",
+        "Get the fallback program list configured for a channel, which plays whenever the lineup has no scheduled content (for example during flex gaps). Call after list_channels to get a channel ID. Use this when you need to see what a channel will air when nothing else is scheduled — it shows the programs referenced by the channel's fallbackCollections configuration. This is a read-only lookup and returns the fallback program list as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID (get available IDs via list_channels)"),
@@ -237,7 +237,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "get_channel_native_playback",
     {
       description:
-        "Get native playback information for a channel, describing how Tunarr serves the channel's stream directly to players. Use this when debugging playback or integrating native playback clients; obtain channel IDs via list_channels. This is a read-only lookup and returns the native playback info as JSON.",
+        "Get native playback information for a channel — how Tunarr serves the channel's stream directly to players. Call after list_channels to get a channel ID. Use this when debugging playback issues or integrating native playback clients (VLC, Kodi, etc.). For lineup/schedule content details, use get_channel_programming or get_channel_lineup instead. This is a read-only lookup and returns the native playback info as JSON.",
       annotations: { readOnlyHint: true },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID (get available IDs via list_channels)"),
@@ -255,7 +255,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "list_channel_lineups",
     {
       description:
-        "List the compiled lineups across all channels configured in Tunarr, in one call. Use this when you want an overview of what every channel currently plays instead of calling get_channel_lineup per channel; obtain per-channel details via get_channel_lineup afterwards. This is a read-only lookup and returns the array of channel lineups as JSON.",
+        "List the compiled lineups across all channels in one call. Call after list_channels to get an overview of what every channel currently plays without having to call get_channel_lineup per channel. Use this for a quick survey; for per-channel details, call get_channel_lineup with specific IDs obtained from list_channels. This is a read-only lookup and returns the array of channel lineups as JSON.",
       annotations: { readOnlyHint: true },
     },
     async () => {
@@ -270,7 +270,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "add_program_to_channel",
     {
       description:
-        "Add programs to a channel's programming, extending the content the channel can play. Use this after finding programs via lookup_program / list_programs (or via get_channel_programs to see what the channel already has); provide the programs or tokens in the request body per the Tunarr programming API. This mutates the channel's programming and returns the updated programming result as JSON.",
+        "Add programs (shows, seasons, or episodes) to a channel's programming — this defines the source content the channel draws from. Use this after creating a channel (create_channel) or as an extension step for existing channels. Before calling, obtain the channel ID via list_channels and inspect existing content with get_channel_programs. Provide program IDs or tokens in the request body per the Tunarr programming API. After adding programs, verify the result with get_channel_programming or add schedule entries (add_schedule_slot, add_schedule_time_slot) to control how/when they play. Returns the updated programming result as JSON.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID to add programs to (get available IDs via list_channels)"),
@@ -292,7 +292,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "add_schedule_slot",
     {
       description:
-        "Add a schedule slot to a channel, defining one entry of its programming schedule. Use this when building or extending a channel's schedule config; obtain channel IDs via list_channels and inspect the current schedule with get_channel_programming or get_channel_schedule. This mutates the channel's schedule and returns the updated schedule as JSON.",
+        "Add a schedule slot to a channel — this defines ONE entry in the channel's programming schedule. Use this for advanced scheduling: random lineups with fillers, mid-roll breaks, padding/flex behavior, weighted ordering, and iteration groups. Call after creating a channel (create_channel) or adding programs (add_program_to_channel), and inspect the current state first with get_channel_programming. Obtain the channel ID via list_channels. If you just want to append a show linearly without complex scheduling, use add_show_to_channel (semantic tool) instead — it handles add_program_to_channel internally. Returns the updated schedule as JSON.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         channelId: z.string().describe("The channel ID or UUID to add the slot to (get available IDs via list_channels)"),
@@ -327,7 +327,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "add_schedule_time_slot",
     {
       description:
-        "Add a time-based schedule slot to a channel, placing programming at a specific time of day. Use this when you want a channel to air content at fixed times; obtain channel IDs via list_channels and inspect the current time slots with get_channel_programming or get_channel_schedule. This mutates the channel's schedule and returns the updated schedule as JSON.",
+        "Add a time-based schedule slot to a channel — this places programming at a specific time of day (e.g. 'air The Office every weekday at 9 AM'). Call after creating a channel (create_channel) or adding programs (add_program_to_channel), and inspect the current state first with get_channel_programming or get_channel_schedule. Obtain the channel ID via list_channels. Use this when you want fixed-air-time scheduling rather than continuous rotation. Returns the updated schedule as JSON.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         channelId: z.string().describe("The channel ID or UUID to add the time slot to (get available IDs via list_channels)"),
@@ -358,7 +358,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "bulk_add_fillers",
     {
       description:
-        "Add filler lists to many channels at once. Fillers play between or over scheduled content (such as pre-roll commercials or interstitials); use this to attach the same filler collections to several channels instead of updating each one. This mutates the affected channels and returns the bulk operation result as JSON.",
+        "Add filler lists to multiple channels at once. Fillers play between or over scheduled content (pre-roll commercials, interstitials, etc.). Call after list_channels to get channel IDs and after inspecting existing fillers with get_channel_programming. Use this when the same filler collections should be applied to several channels instead of updating each one individually. After adding fillers, verify with get_channel_programming or get_channel_fallbacks. Returns the bulk operation result as JSON.",
       annotations: { readOnlyHint: false },
       inputSchema: {
         channelIds: z.array(z.string()).optional().describe("Channel IDs or UUIDs to attach the fillers to (obtainable via list_channels)"),
@@ -388,7 +388,7 @@ export function registerChannelsTools(server: McpServer, client: TunarrClient) {
     "clear_channel_schedule",
     {
       description:
-        "Permanently clear a channel's entire schedule, removing all of its schedule slots and time slots. This is a destructive, irreversible operation: the removed schedule configuration cannot be recovered, so verify the correct channel ID with list_channels before calling. Returns a JSON confirmation with success and a message.",
+        "Permanently clear a channel's entire schedule — removes all schedule slots and time slots. This is a destructive, irreversible operation that does NOT remove programming (programs added via add_program_to_channel remain). After clearing, you must re-add scheduling entries with add_schedule_slot or add_schedule_time_slot to define how/when content plays. Verify the correct channel ID with list_channels before calling. Returns a JSON confirmation with success and a message.",
       annotations: { destructiveHint: true, readOnlyHint: false },
       inputSchema: {
         id: z.string().describe("The channel ID or UUID whose schedule will be cleared (get available IDs via list_channels)"),
