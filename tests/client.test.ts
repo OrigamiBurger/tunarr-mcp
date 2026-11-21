@@ -275,6 +275,107 @@ describe("Channel methods", () => {
     );
     resetFetch();
   });
+
+  it("exposes an actionable hint from Tunarr validation details", async () => {
+    mockFetch({
+      "/api/channels": {
+        status: 400,
+        statusText: "Bad Request",
+        body: {
+          type: "https://tools.ietf.org/html/rfc6585",
+          title: "Bad Request",
+          status: 400,
+          instance: "/api/channels",
+          details: [
+            {
+              field: "channel.number",
+              error: "Number must be greater than 0",
+              attempted: -1,
+            },
+            {
+              field: "channel.name",
+              error: "Name is required",
+              attempted: null,
+            },
+          ],
+        },
+      },
+    });
+    const client = createClient();
+    try {
+      await client.createChannel({
+        type: "new",
+        channel: {
+          id: "ch-1",
+          name: "",
+          number: -1,
+          groupTitle: "x",
+          startTime: 0,
+          duration: 12,
+        } as never,
+        transcodeConfigId: "tc-1",
+      } as never);
+      throw new Error("expected createChannel to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      const e = err as {
+        status: number;
+        actionableHint: string | null;
+        tunarrBody: { status?: number; details?: unknown[] };
+      };
+      expect(e.status).toBe(400);
+      // Real body preserved on the error.
+      expect(e.tunarrBody.status).toBe(400);
+      // Hint names the failing fields and their expected shape.
+      expect(e.actionableHint).toContain('field "channel.number"');
+      expect(e.actionableHint).toContain("must be greater than 0");
+      expect(e.actionableHint).toContain("channel.name");
+      // Message still carries the status prefix for backward compatibility.
+      expect(e.message).toContain("Tunarr request failed: 400");
+      expect(e.message).toContain(e.actionableHint ?? "");
+    }
+    resetFetch();
+  });
+
+  it("surfaces Tunarr's own message when no details are present", async () => {
+    mockFetch({
+      "/api/channels/ch-1": {
+        status: 400,
+        statusText: "Bad Request",
+        body: { title: "Malformed channel DTO", message: "Invalid structure" },
+      },
+    });
+    const client = createClient();
+    try {
+      await client.updateChannel("ch-1", {} as never);
+      throw new Error("expected updateChannel to throw");
+    } catch (err) {
+      const e = err as { actionableHint: string | null };
+      expect(e.actionableHint).toContain("Invalid structure");
+    }
+    resetFetch();
+  });
+
+  it("leaves actionableHint null when Tunarr returns nothing actionable", async () => {
+    mockFetch({
+      "/api/channels/ch-1": {
+        status: 400,
+        statusText: "Bad Request",
+        body: {},
+      },
+    });
+    const client = createClient();
+    try {
+      await client.updateChannel("ch-1", {} as never);
+      throw new Error("expected updateChannel to throw");
+    } catch (err) {
+      const e = err as { actionableHint: string | null; message: string };
+      expect(e.actionableHint).toBeNull();
+      // No dangling " — " suffix when there is no hint.
+      expect(e.message.trim()).toBe("Tunarr request failed: 400");
+    }
+    resetFetch();
+  });
 });
 
 describe("MediaSource methods", () => {
