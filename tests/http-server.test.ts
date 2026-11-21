@@ -124,7 +124,7 @@ describe("HTTP server transport", () => {
     const conn = await connectClient(port);
     try {
       const res = await conn.client.listTools();
-      expect(res.tools.length).toBe(114);
+      expect(res.tools.length).toBe(119);
 
       const names = res.tools.map((t) => t.name).sort();
       const reference = listToolNames(createTunarrMcpServer(config).server);

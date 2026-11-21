@@ -14,9 +14,9 @@ Zod [`inputSchema`](https://modelcontextprotocol.io/developer/tools/schema-valid
 so the model receives structured, validated arguments and gets a clear error
 when they are missing or malformed.
 
-- **55 tools** grouped into 11 concerns: channels, custom-shows, filler-lists,
-  guide, media-sources, programs, sessions, settings, smart-collections,
-  streaming, and system.
+- **119 tools** grouped into 13 concerns: channels, custom-shows, filler-lists,
+  guide, media-sources, programs, semantic (high-level channel creation),
+  sessions, settings, smart-collections, streaming, system, and trash.
 - **Read-mostly by default**: mutations (create/update/delete) return the
   resulting resource or a confirmation message.
 - **Explicit argument schemas** for every tool that takes input, so missing or
@@ -153,6 +153,30 @@ as MCP error responses wrapping the underlying `TunarrError`.
 | `update_channel` | `id`, `body` | Update channel fields. |
 | `delete_channel` | `id` | Delete a channel permanently. |
 | `get_channel_schedule` | `channelId` | Schedule configuration (time slots, flex settings). |
+| `get_channel_programs` | `id` | Programs that make up the channel's lineup source contents. |
+| `get_channel_lineup` | `id` | Compiled ordered sequence of program slots after schedules/fillers resolved. |
+| `get_channel_now_playing` | `id` | What is playing on a channel right now. |
+| `get_channel_programming` | `id` | Full programming/schedule configuration (program sources, slots, ordering). |
+| `get_channel_fallbacks` | `id` | Fallback program list for when the lineup has no scheduled content. |
+| `get_channel_native_playback` | `id` | Native playback info for a channel's stream. |
+| `list_channel_lineups` | — | Compiled lineups across all channels in one call. |
+| `add_program_to_channel` | `id`, `body` | Add programs to a channel's programming. |
+| `add_schedule_slot` | `channelId`, `body` | Add a schedule slot to a channel. |
+| `add_schedule_time_slot` | `channelId`, `body` | Add a time-based schedule slot to a channel. |
+| `bulk_add_fillers` | `channelIds`, `mode`, `body` | Add filler lists to many channels at once. |
+| `clear_channel_schedule` | `id` | Permanently clear a channel's entire schedule. |
+
+### Semantic — `src/tools/semantic.ts`
+
+High-level, task-oriented tools that hide the Tunarr DTO contract and orchestrate multiple endpoints in a single call. These are the recommended entry points for common channel creation workflows.
+
+| Tool | Arguments | Purpose |
+| ---- | --------- | ------- |
+| `create_channel_from_show` | `channelName`, `showId`, `lineUp?`, `channelNumber?`, `groupTitle?`, `guideFlexTitle?`, `transcodeConfigId?`, `seasonId?`, `includeAllSeasons?` | Create a TV channel backed by a show and attach its episodes in one call. Resolves the show (by UUID, external id, or title), creates the channel, and populates the lineup. Defaults to the first season; `includeAllSeasons` adds every season. |
+| `add_show_to_channel` | `channelId`, `showId`, `lineUp?`, `seasonId?`, `includeAllSeasons?` | Attach a show's episodes to an existing channel by resolving it and appending them. Does not disturb existing lineup entries. |
+| `get_episode_list` | `showId`, `seasonId?` | List the episodes that belong to a show as a flat array (all seasons, or one specific season). |
+| `search_shows` | `query`, `mediaSourceId?`, `limit?` | Search for TV shows by title/keyword, returning only show-type results with IDs and external identifiers. |
+| `list_transcode_configs` | — | List available transcode configurations (id, name, resolution, hardware acceleration) for choosing a config when creating channels. |
 
 ### Media Sources — `src/tools/media-sources.ts`
 
@@ -279,4 +303,16 @@ src/
   types/tunarr.ts      # Shared TypeScript types for Tunarr API shapes
   tools/               # One module per concern, each exporting a register*Tools()
 tests/                 # Vitest suites; helpers.ts provides the fetch mock
+examples/              # Working patterns and troubleshooting guides
 ```
+
+## Examples
+
+See [`examples/channel-creation-flows.md`](examples/channel-creation-flows.md) for documented working patterns:
+
+- **Single-show channel** — Recommended approach using `create_channel_from_show` (one call, auto-resolves show and populates lineup)
+- **Manual single-show channel** — Step-by-step using low-level tools (`create_channel` → `add_schedule_slot` with `type: "show"`)
+- **Multi-show themed channel** — Using smart collections for keyword-based content grouping
+- **Pitfalls to avoid** — Why smart collections fail silently, incorrect body schemas, and manual episode assembly
+
+The semantic tools (`create_channel_from_show`, `add_show_to_channel`, `search_shows`, `list_transcode_configs`, `get_episode_list`) are the recommended entry points for common workflows. They handle show resolution, DTO assembly, and multi-step orchestration internally.

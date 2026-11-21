@@ -695,11 +695,10 @@ export class TunarrClient {
   // These orchestrate multiple raw endpoints behind a single, goal-oriented
   // method so callers don't have to assemble Tunarr DTO contracts directly.
 
+
   /**
-   * Resolve a show by any of its identifiers (Tunarr UUID, external id,
-   * Plex/TVDB/TMDB id, or free-text title) to a small resolved-program DTO
-   * suitable for use in a channel lineup or custom show. The returned id is a
-   * Tunarr-internal id that the lineup DTO accepts.
+   * Resolve a show by UUID, external ID (IMDb/TMDb/TVDB), or free-text title.
+   * Returns an array of matching show summaries with their Tunarr-internal IDs.
    */
   async resolveShow(
     id: string,
@@ -725,9 +724,27 @@ export class TunarrClient {
   }
 
   /**
-   * Create a channel backed by a show and attach its first season's episodes
-   * as the channel's initial lineup. Returns the created channel, the resolved
-   * show, and the new channel id.
+   * List all seasons of a show, returning each season's UUID, title, and number.
+   * Useful for choosing which season(s) to add to a channel lineup.
+   */
+  async listShowSeasonsSummary(
+    showId: string,
+  ): Promise<{ uuid: string; title: string; index: number }[]> {
+    const seasons = await this.listShowSeasons(showId);
+    if (!Array.isArray(seasons)) return [];
+    return (seasons as Record<string, unknown>[])
+      .map((s) => ({
+        uuid: (s.uuid as string) ?? "",
+        title: (s.title as string) ?? `Season ${(s.index as number) ?? "?"}`,
+        index: (s.index as number) ?? 0,
+      }))
+      .filter((s) => s.uuid);
+  }
+
+  /**
+   * Create a channel backed by a show and attach its episodes as the channel's
+   * initial lineup. By default adds the first season; use `includeAllSeasons` or
+   * `seasonId` to control which seasons are included.
    */
   async createChannelFromShow(
     channelId: string,
@@ -737,10 +754,18 @@ export class TunarrClient {
       channelNumber?: number;
       transcodeConfigId?: string;
       lineUp?: "ordered" | "chronological" | "random" | "next";
+      /** Specific season UUID to add. Mutually exclusive with `includeAllSeasons`. */
+      seasonId?: string;
+      /** Add every season of the show (overrides `seasonId`). */
+      includeAllSeasons?: boolean;
+      /** Channel group title for grouping in the guide. Defaults to channelName. */
+      groupTitle?: string;
+      /** Guide flex title shown during flex time gaps. */
+      guideFlexTitle?: string;
     } = {},
   ): Promise<{
-    createdChannel: unknown;
-    resolvedShow: unknown;
+    createdChannel: Record<string, unknown>;
+    resolvedShow: { id: string; title: string; type: string };
     channelId: string;
   }> {
     const resolvedShow = await this.resolveShow(showId);
@@ -760,7 +785,8 @@ export class TunarrClient {
         id: channelIdResolved,
         name: channelName,
         number: opts.channelNumber ?? 0,
-        groupTitle: channelName,
+        groupTitle: opts.groupTitle ?? channelName,
+        guideFlexTitle: opts.guideFlexTitle,
         startTime: 0,
         duration: 12,
         stealth: false,
@@ -776,35 +802,81 @@ export class TunarrClient {
     });
 
     const lineUp = opts.lineUp ?? "ordered";
-    await this.addProgramToChannel(channelIdResolved, {
-      type: "manual",
-      lineup: [
-        {
-          type: "content",
-          id: resolvedShow[0].id,
-          duration: 12,
-          season: { order: lineUp, direction: "asc" },
-        },
-      ],
-      append: false,
-    });
+
+    if (opts.includeAllSeasons) {
+      // Add all seasons to the lineup
+      const seasons = await this.listShowSeasonsSummary(showId);
+      for (const season of seasons) {
+        await this.addProgramToChannel(channelIdResolved, {
+          type: "manual",
+          lineup: [
+            {
+              type: "content",
+              id: season.uuid,
+              duration: 12,
+              season: { order: lineUp, direction: "asc" },
+            },
+          ],
+          append: true,
+        });
+      }
+    } else if (opts.seasonId) {
+      // Add specific season
+      await this.addProgramToChannel(channelIdResolved, {
+        type: "manual",
+        lineup: [
+          {
+            type: "content",
+            id: opts.seasonId,
+            duration: 12,
+            season: { order: lineUp, direction: "asc" },
+          },
+        ],
+        append: false,
+      });
+    } else {
+      // Default: first season (original behavior)
+      await this.addProgramToChannel(channelIdResolved, {
+        type: "manual",
+        lineup: [
+          {
+            type: "content",
+            id: resolvedShow[0].id,
+            duration: 12,
+            season: { order: lineUp, direction: "asc" },
+          },
+        ],
+        append: false,
+      });
+    }
 
     return {
       createdChannel,
-      resolvedShow,
+      resolvedShow: { id: resolvedShow[0].id, title: resolvedShow[0].title, type: resolvedShow[0].type },
       channelId: channelIdResolved,
     };
   }
 
   /**
-   * Attach a show to an existing channel without disturbing its current lineup.
-   * Uses append=true so the show's episodes are added at the end of the lineup.
+   * Attach a show's episodes to an existing channel without disturbing its
+   * current lineup. Uses append=true so episodes are added at the end.
+   * By default adds the first season; use `includeAllSeasons` or `seasonId`
+   * to control which seasons are included.
    */
   async addShowToChannel(
     channelId: string,
     showId: string,
-    opts: { lineUp?: "ordered" | "chronological" | "random" | "next" } = {},
-  ): Promise<{ attached: unknown; resolvedShow: unknown }> {
+    opts: {
+      lineUp?: "ordered" | "chronological" | "random" | "next";
+      /** Specific season UUID to add. Mutually exclusive with `includeAllSeasons`. */
+      seasonId?: string;
+      /** Add every season of the show (overrides `seasonId`). */
+      includeAllSeasons?: boolean;
+    } = {},
+  ): Promise<{
+    attached: Record<string, unknown>;
+    resolvedShow: { id: string; title: string; type: string };
+  }> {
     const resolvedShow = await this.resolveShow(showId);
     if (resolvedShow.length === 0) {
       throw new Error(
@@ -812,19 +884,54 @@ export class TunarrClient {
       );
     }
     const lineUp = opts.lineUp ?? "ordered";
-    const attached = await this.addProgramToChannel(channelId, {
-      type: "manual",
-      lineup: [
-        {
-          type: "content",
-          id: resolvedShow[0].id,
-          duration: 12,
-          season: { order: lineUp, direction: "asc" },
-        },
-      ],
-      append: true,
-    });
-    return { attached, resolvedShow };
+
+    let attached: Record<string, unknown> = {};
+    if (opts.includeAllSeasons) {
+      const seasons = await this.listShowSeasonsSummary(showId);
+      for (const season of seasons) {
+        attached = await this.addProgramToChannel(channelId, {
+          type: "manual",
+          lineup: [
+            {
+              type: "content",
+              id: season.uuid,
+              duration: 12,
+              season: { order: lineUp, direction: "asc" },
+            },
+          ],
+          append: true,
+        }) as Record<string, unknown>;
+      }
+    } else if (opts.seasonId) {
+      attached = await this.addProgramToChannel(channelId, {
+        type: "manual",
+        lineup: [
+          {
+            type: "content",
+            id: opts.seasonId,
+            duration: 12,
+            season: { order: lineUp, direction: "asc" },
+          },
+        ],
+        append: true,
+      }) as Record<string, unknown>;
+    } else {
+      // Default: first season (original behavior)
+      attached = await this.addProgramToChannel(channelId, {
+        type: "manual",
+        lineup: [
+          {
+            type: "content",
+            id: resolvedShow[0].id,
+            duration: 12,
+            season: { order: lineUp, direction: "asc" },
+          },
+        ],
+        append: true,
+      }) as Record<string, unknown>;
+    }
+
+    return { attached, resolvedShow: { id: resolvedShow[0].id, title: resolvedShow[0].title, type: resolvedShow[0].type } };
   }
 
   /**

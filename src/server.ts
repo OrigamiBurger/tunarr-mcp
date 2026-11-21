@@ -48,11 +48,10 @@ channels. How the entities relate:
   explicitly asked, empty it.
 
 Typical flows:
-- Discover content: list_media_sources -> lookup_program /
+- Discover content: list_media_sources -> search_shows / lookup_program /
   lookup_by_external_id / batch_lookup_programs.
-- Build a channel: create_channel with a lineup of programs or custom shows,
-  optionally attach filler lists, then verify with get_channel_schedule and
-  get_guide_status.
+- Build a channel: use create_channel_from_show (single call — resolves show, creates channel, populates lineup). Use includeAllSeasons=true to add every season, or seasonId for a specific one. Optionally set groupTitle and guideFlexTitle.
+- Extend a channel: use add_show_to_channel to append a show's episodes without disturbing existing content. Same season control options.
 - Maintain: list_tasks + run_task for guide refreshes and metadata updates.
 
 Safety: tools named create_/update_/scan_/run_ modify Tunarr state; tools
@@ -64,6 +63,13 @@ with the user before calling them. Read-only tools never modify state.
 All IDs are opaque strings; fetch them with the corresponding list_/get_
 tools first. Responses are returned as JSON (or raw M3U/XMLTV text for
 playlist tools).
+
+Semantic tools (recommended entry points):
+- create_channel_from_show(channelName, showId, { includeAllSeasons?, seasonId?, lineUp?, groupTitle?, guideFlexTitle? }) — one-call channel creation
+- add_show_to_channel(channelId, showId, { includeAllSeasons?, seasonId?, lineUp? }) — append a show to an existing channel
+- list_show_seasons(showId) — discover available seasons with UUIDs
+- search_shows(query, { mediaSourceId?, limit? }) — find shows by title/keyword
+- list_transcode_configs() — see available encoding configs for channel creation
 `.trim();
 
 export interface TunarrMcpServerHandle {
@@ -72,7 +78,7 @@ export interface TunarrMcpServerHandle {
 }
 
 /**
- * Build a fully configured MCP server (all 114 Tunarr tools registered) that
+ * Build a fully configured MCP server (all 119 Tunarr tools registered) that
  * is not yet connected to any transport. Shared by the stdio entry point
  * (src/index.ts) and the Streamable HTTP server (src/http.ts), which creates
  * one instance per MCP session.
@@ -103,6 +109,7 @@ export function createTunarrMcpServer(
   registerStreamingTools(server, client);
   registerSystemTools(server, client);
   registerTrashTools(server, client);
+  registerSemanticTools(server, client);
 
   return { server, client };
 }
