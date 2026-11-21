@@ -17,16 +17,105 @@ function isJsonResponse(contentType?: string): boolean {
   return !!contentType?.includes("application/json");
 }
 
+/**
+ * A Tunarr ProblemDetails-style validation entry. Tunarr (ASP.NET Core) returns
+ * validation failures as a `details` array where each entry names the failing
+ * field and the specific problem:
+ *   { "field": "channel.number", "error": "Number must be greater than 0" }
+ */
+interface TunarrValidationDetail {
+  field?: string;
+  error?: string;
+  attempted?: unknown;
+}
+
+/**
+ * Tunarr's ASP.NET Core ProblemDetails envelope (subset). Only `status`,
+ * `title`, `instance` and `details` are guaranteed to exist; the rest vary by
+ * endpoint. Kept intentionally permissive so we can surface whatever Tunarr
+ * sends back.
+ */
+interface TunarrProblemDetails {
+  type?: string;
+  title?: string;
+  status?: number;
+  instance?: string;
+  details?: TunarrValidationDetail[];
+  [key: string]: unknown;
+}
+
+/**
+ * TunarrError carries the real error body Tunarr returned plus an
+ * `actionableHint` — a human-readable, fix-oriented message that names the
+ * failing field(s) and the expected shape, so a caller can correct the request
+ * on the next attempt instead of seeing a bare "400 Bad Request". The message
+ * still begins with `Tunarr request failed: <status> <statusText>` so callers
+ * that match on that prefix keep working.
+ */
 class TunarrError extends Error {
   public status: number;
+  public statusText: string;
   public body: unknown;
+  public tunarrBody: TunarrProblemDetails | null;
+  public actionableHint: string | null;
 
-  constructor(message: string, status: number, body: unknown) {
+  constructor(
+    message: string,
+    status: number,
+    statusText: string,
+    body: unknown,
+    actionableHint: string | null,
+  ) {
     super(message);
     this.name = "TunarrError";
     this.status = status;
+    this.statusText = statusText;
     this.body = body;
+    this.tunarrBody =
+      body && typeof body === "object" ? (body as TunarrProblemDetails) : null;
+    this.actionableHint = actionableHint;
   }
+}
+
+/**
+ * Build an actionable hint from Tunarr's ProblemDetails body. Tunarr encodes
+ * the most useful fix information in `details` (one entry per failing field).
+ * Returns null when there is nothing actionable to tell the caller.
+ */
+function buildActionableHint(
+  status: number,
+  body: unknown,
+): { hint: string | null; details: TunarrValidationDetail[] } {
+  const problem =
+    body && typeof body === "object" ? (body as TunarrProblemDetails) : null;
+  const details = Array.isArray(problem?.details) ? problem.details : [];
+
+  if (details.length > 0) {
+    const parts = details.map((d) => {
+      const field = d.field ? `field "${d.field}"` : "the request";
+      const attempted =
+        d.attempted === undefined
+          ? ""
+          : ` (got ${JSON.stringify(d.attempted)})`;
+      const error = d.error ? `: ${d.error}` : "";
+      return `${field}${attempted}${error}`;
+    });
+    let hint = `Validation failed on ${parts.length === 1 ? "1 field" : `${parts.length} fields`}: ${parts.join("; ")}.`;
+    if (problem?.title) {
+      hint += ` Tunarr title: ${problem.title}.`;
+    }
+    return { hint, details };
+  }
+
+  // No structured details; surface Tunarr's own message/title if present so the
+  // caller still gets something better than "Bad Request".
+  let hint: string | null = null;
+  const message =
+    problem?.message ?? problem?.error ?? problem?.title ?? null;
+  if (message) {
+    hint = `Tunarr said: ${message}`;
+  }
+  return { hint, details };
 }
 
 async function responseToJson(res: Response): Promise<unknown> {
@@ -46,10 +135,15 @@ async function responseToJson(res: Response): Promise<unknown> {
 async function ensureOk(res: Response): Promise<unknown> {
   if (!res.ok) {
     const body = await responseToJson(res);
+    const { hint } = buildActionableHint(res.status, body);
     throw new TunarrError(
-      `Tunarr request failed: ${res.status} ${res.statusText}`,
+      `Tunarr request failed: ${res.status} ${res.statusText}${
+        hint ? ` — ${hint}` : ""
+      }`,
       res.status,
+      res.statusText,
       body,
+      hint,
     );
   }
   // 204 No Content — nothing to return
@@ -456,6 +550,8 @@ export class TunarrClient {
       throw new TunarrError(
         `Tunarr request failed: ${res.status} ${res.statusText}`,
         res.status,
+        res.statusText,
+        null,
         null,
       );
     }
@@ -471,6 +567,8 @@ export class TunarrClient {
       throw new TunarrError(
         `Tunarr request failed: ${res.status} ${res.statusText}`,
         res.status,
+        res.statusText,
+        null,
         null,
       );
     }
@@ -1108,6 +1206,8 @@ export class TunarrClient {
       throw new TunarrError(
         `Tunarr request failed: ${res.status} ${res.statusText}`,
         res.status,
+        res.statusText,
+        null,
         null,
       );
     }
@@ -1123,6 +1223,8 @@ export class TunarrClient {
       throw new TunarrError(
         `Tunarr request failed: ${res.status} ${res.statusText}`,
         res.status,
+        res.statusText,
+        null,
         null,
       );
     }
@@ -1139,6 +1241,8 @@ export class TunarrClient {
       throw new TunarrError(
         `Tunarr request failed: ${res.status} ${res.statusText}`,
         res.status,
+        res.statusText,
+        null,
         null,
       );
     }
@@ -1155,6 +1259,8 @@ export class TunarrClient {
       throw new TunarrError(
         `Tunarr request failed: ${res.status} ${res.statusText}`,
         res.status,
+        res.statusText,
+        null,
         null,
       );
     }
